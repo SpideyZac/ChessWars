@@ -177,6 +177,7 @@ impl Piece {
         assert!(self.legal_moves.contains(&position));
         self.maybe_capture_piece(board, &position);
         self.position = position;
+        self.init_legal_moves(board);
     }
 
     fn maybe_capture_piece(&mut self, board: &mut Vec<Piece>, position: &(u16, u16)) {
