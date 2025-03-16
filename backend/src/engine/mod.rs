@@ -1,1 +1,2 @@
+mod piece;
 mod player;
