@@ -1,4 +1,4 @@
-const KNIGHT_MOVES: [(i8, i8); 8] = [
+const KNIGHT_MOVES: [(i32, i32); 8] = [
     (-2, -1),
     (-2, 1),
     (-1, -2),
@@ -9,7 +9,7 @@ const KNIGHT_MOVES: [(i8, i8); 8] = [
     (2, 1),
 ];
 
-const KING_MOVES: [(i8, i8); 8] = [
+const KING_MOVES: [(i32, i32); 8] = [
     (-1, -1),
     (-1, 0),
     (-1, 1),
@@ -30,216 +30,159 @@ pub enum PieceType {
 }
 
 pub struct Piece {
+    player_id: u8,
+    board_size: u16,
     piece_type: PieceType,
     position: (u16, u16),
-    board_size: u16,
+    legal_moves: Vec<(u16, u16)>,
 }
 
 impl Piece {
-    pub fn new(piece_type: PieceType, position: (u16, u16), board_size: u16) -> Self {
+    pub fn new(
+        player_id: u8,
+        board_size: u16,
+        piece_type: PieceType,
+        position: (u16, u16),
+    ) -> Self {
         Self {
+            player_id,
+            board_size,
             piece_type,
             position,
-            board_size,
+            legal_moves: vec![],
         }
     }
 
-    pub fn get_legal_moves(&self, board_pieces: &Vec<Piece>) -> Vec<(u16, u16)> {
+    pub fn init_legal_moves(&mut self, board: &Vec<Piece>) {
+        self.legal_moves = self.get_legal_moves(board);
+    }
+
+    fn get_legal_moves(&self, board: &Vec<Piece>) -> Vec<(u16, u16)> {
         match self.piece_type {
-            PieceType::Pawn => self.get_king_moves(), // Pawns can move the same as a king
-            PieceType::Rook => self.get_rook_moves(board_pieces),
-            PieceType::Knight => self.get_knight_moves(),
-            PieceType::Bishop => self.get_bishop_moves(board_pieces),
-            PieceType::Queen => self // Queens can move like rooks and bishops
-                .get_rook_moves(board_pieces)
+            PieceType::Pawn => self.get_king_legal_moves(board), // Pawns move like kings
+            PieceType::Rook => self.get_rook_legal_moves(board),
+            PieceType::Knight => self.get_knight_legal_moves(board),
+            PieceType::Bishop => self.get_bishop_legal_moves(board),
+            PieceType::Queen => self // Queens move like knights and bishops
+                .get_knight_legal_moves(board)
                 .iter()
-                .chain(self.get_bishop_moves(board_pieces).iter())
-                .copied()
+                .chain(self.get_bishop_legal_moves(board).iter())
+                .cloned()
                 .collect(),
-            PieceType::King => self.get_king_moves(),
+            PieceType::King => self.get_king_legal_moves(board),
         }
     }
 
-    fn get_rook_moves(&self, board_pieces: &Vec<Piece>) -> Vec<(u16, u16)> {
-        let mut moves = vec![];
+    fn get_rook_legal_moves(&self, board: &Vec<Piece>) -> Vec<(u16, u16)> {
+        let mut legal_moves = vec![];
 
-        // Check moves to the right
-        for x in (self.position.0 + 1)..self.board_size {
-            moves.push((x, self.position.1));
-            // Check if there is a piece in the way, if so stop checking
-            if board_pieces
-                .iter()
-                .any(|piece| piece.position == (x, self.position.1))
-            {
-                break;
+        for (dx, dy) in [(0, 1), (0, -1), (1, 0), (-1, 0)].iter() {
+            let mut x = self.position.0 as i32 + dx;
+            let mut y = self.position.1 as i32 + dy;
+
+            while x >= 0 && x < self.board_size as i32 && y >= 0 && y < self.board_size as i32 {
+                let position = (x as u16, y as u16);
+
+                if let Some(piece) = board.iter().find(|p| p.position == position) {
+                    if piece.player_id != self.player_id {
+                        legal_moves.push(position);
+                    }
+
+                    break;
+                }
+
+                legal_moves.push(position);
+                x += dx;
+                y += dy;
             }
         }
 
-        // Check moves to the left
-        for x in (0..self.position.0).rev() {
-            moves.push((x, self.position.1));
-            // Check if there is a piece in the way, if so stop checking
-            if board_pieces
-                .iter()
-                .any(|piece| piece.position == (x, self.position.1))
-            {
-                break;
-            }
-        }
-
-        // Check moves up
-        for y in (self.position.1 + 1)..self.board_size {
-            moves.push((self.position.0, y));
-            // Check if there is a piece in the way, if so stop checking
-            if board_pieces
-                .iter()
-                .any(|piece| piece.position == (self.position.0, y))
-            {
-                break;
-            }
-        }
-
-        // Check moves down
-        for y in (0..self.position.1).rev() {
-            moves.push((self.position.0, y));
-            // Check if there is a piece in the way, if so stop checking
-            if board_pieces
-                .iter()
-                .any(|piece| piece.position == (self.position.0, y))
-            {
-                break;
-            }
-        }
-
-        moves
+        legal_moves
     }
 
-    fn get_knight_moves(&self) -> Vec<(u16, u16)> {
-        let mut moves = Vec::with_capacity(8);
+    fn get_knight_legal_moves(&self, board: &Vec<Piece>) -> Vec<(u16, u16)> {
+        let mut legal_moves = vec![];
+
         for (dx, dy) in KNIGHT_MOVES.iter() {
-            let new_x = self.position.0 as i32 + *dx as i32;
-            let new_y = self.position.1 as i32 + *dy as i32;
+            let x = self.position.0 as i32 + dx;
+            let y = self.position.1 as i32 + dy;
 
-            // Check if the new position is within the board
-            if new_x >= 0
-                && new_x < self.board_size as i32
-                && new_y >= 0
-                && new_y < self.board_size as i32
-            {
-                moves.push((new_x as u16, new_y as u16));
+            if x >= 0 && x < self.board_size as i32 && y >= 0 && y < self.board_size as i32 {
+                let position = (x as u16, y as u16);
+
+                if let Some(piece) = board.iter().find(|p| p.position == position) {
+                    if piece.player_id != self.player_id {
+                        legal_moves.push(position);
+                    }
+                } else {
+                    legal_moves.push(position);
+                }
             }
         }
 
-        moves
+        legal_moves
     }
 
-    fn get_bishop_moves(&self, board_pieces: &Vec<Piece>) -> Vec<(u16, u16)> {
-        let mut moves = vec![];
+    fn get_bishop_legal_moves(&self, board: &Vec<Piece>) -> Vec<(u16, u16)> {
+        let mut legal_moves = vec![];
 
-        // Check moves to the top right
-        for i in 1..self.board_size {
-            let new_x = self.position.0 as i32 + i as i32;
-            let new_y = self.position.1 as i32 + i as i32;
+        for (dx, dy) in [(1, 1), (1, -1), (-1, 1), (-1, -1)].iter() {
+            let mut x = self.position.0 as i32 + dx;
+            let mut y = self.position.1 as i32 + dy;
 
-            // Check if the new position is within the board
-            if new_x >= self.board_size as i32 || new_y >= self.board_size as i32 {
-                break;
-            }
+            while x >= 0 && x < self.board_size as i32 && y >= 0 && y < self.board_size as i32 {
+                let position = (x as u16, y as u16);
 
-            moves.push((new_x as u16, new_y as u16));
+                if let Some(piece) = board.iter().find(|p| p.position == position) {
+                    if piece.player_id != self.player_id {
+                        legal_moves.push(position);
+                    }
 
-            // Check if there is a piece in the way, if so stop checking
-            if board_pieces
-                .iter()
-                .any(|piece| piece.position == (new_x as u16, new_y as u16))
-            {
-                break;
-            }
-        }
+                    break;
+                }
 
-        // Check moves to the top left
-        for i in 1..self.board_size {
-            let new_x = self.position.0 as i32 - i as i32;
-            let new_y = self.position.1 as i32 + i as i32;
-
-            // Check if the new position is within the board
-            if new_x < 0 || new_y >= self.board_size as i32 {
-                break;
-            }
-
-            moves.push((new_x as u16, new_y as u16));
-
-            // Check if there is a piece in the way, if so stop checking
-            if board_pieces
-                .iter()
-                .any(|piece| piece.position == (new_x as u16, new_y as u16))
-            {
-                break;
+                legal_moves.push(position);
+                x += dx;
+                y += dy;
             }
         }
 
-        // Check moves to the bottom right
-        for i in 1..self.board_size {
-            let new_x = self.position.0 as i32 + i as i32;
-            let new_y = self.position.1 as i32 - i as i32;
-
-            // Check if the new position is within the board
-            if new_x >= self.board_size as i32 || new_y < 0 {
-                break;
-            }
-
-            moves.push((new_x as u16, new_y as u16));
-
-            // Check if there is a piece in the way, if so stop checking
-            if board_pieces
-                .iter()
-                .any(|piece| piece.position == (new_x as u16, new_y as u16))
-            {
-                break;
-            }
-        }
-
-        // Check moves to the bottom left
-        for i in 1..self.board_size {
-            let new_x = self.position.0 as i32 - i as i32;
-            let new_y = self.position.1 as i32 - i as i32;
-
-            // Check if the new position is within the board
-            if new_x < 0 || new_y < 0 {
-                break;
-            }
-
-            moves.push((new_x as u16, new_y as u16));
-
-            // Check if there is a piece in the way, if so stop checking
-            if board_pieces
-                .iter()
-                .any(|piece| piece.position == (new_x as u16, new_y as u16))
-            {
-                break;
-            }
-        }
-
-        moves
+        legal_moves
     }
 
-    fn get_king_moves(&self) -> Vec<(u16, u16)> {
-        let mut moves = Vec::with_capacity(8);
+    fn get_king_legal_moves(&self, board: &Vec<Piece>) -> Vec<(u16, u16)> {
+        let mut legal_moves = vec![];
+
         for (dx, dy) in KING_MOVES.iter() {
-            let new_x = self.position.0 as i32 + *dx as i32;
-            let new_y = self.position.1 as i32 + *dy as i32;
+            let x = self.position.0 as i32 + dx;
+            let y = self.position.1 as i32 + dy;
 
-            // Check if the new position is within the board
-            if new_x >= 0
-                && new_x < self.board_size as i32
-                && new_y >= 0
-                && new_y < self.board_size as i32
-            {
-                moves.push((new_x as u16, new_y as u16));
+            if x >= 0 && x < self.board_size as i32 && y >= 0 && y < self.board_size as i32 {
+                let position = (x as u16, y as u16);
+
+                if let Some(piece) = board.iter().find(|p| p.position == position) {
+                    if piece.player_id != self.player_id {
+                        legal_moves.push(position);
+                    }
+                } else {
+                    legal_moves.push(position);
+                }
             }
         }
 
-        moves
+        legal_moves
+    }
+
+    pub fn make_move(&mut self, board: &mut Vec<Piece>, position: (u16, u16)) {
+        assert!(self.legal_moves.contains(&position));
+        self.maybe_capture_piece(board, &position);
+        self.position = position;
+    }
+
+    fn maybe_capture_piece(&mut self, board: &mut Vec<Piece>, position: &(u16, u16)) {
+        if let Some(index) = board.iter().position(|p| p.position == *position) {
+            board.remove(index);
+        }
     }
 }
 
@@ -248,68 +191,62 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_rook_moves() {
-        // Test rook moves from the center of the board
-        let rook = Piece::new(PieceType::Rook, (4, 4), 8);
-        let board_pieces = vec![];
-        let moves = rook.get_rook_moves(&board_pieces);
-        assert_eq!(moves.len(), 14);
-
-        // Test rook moves with pieces blocking the way
-        let rook = Piece::new(PieceType::Rook, (4, 4), 8);
-        let board_pieces = vec![
-            Piece::new(PieceType::Pawn, (4, 2), 8),
-            Piece::new(PieceType::Pawn, (4, 6), 8),
-            Piece::new(PieceType::Pawn, (2, 4), 8),
-            Piece::new(PieceType::Pawn, (6, 4), 8),
+    fn test_rook_legal_moves() {
+        let board = vec![
+            Piece::new(0, 8, PieceType::Rook, (0, 0)),
+            Piece::new(0, 8, PieceType::Rook, (0, 7)),
+            Piece::new(0, 8, PieceType::Rook, (7, 0)),
+            Piece::new(0, 8, PieceType::Rook, (7, 7)),
         ];
-        let moves = rook.get_rook_moves(&board_pieces);
-        assert_eq!(moves.len(), 8);
+
+        let mut rook = Piece::new(0, 8, PieceType::Rook, (3, 3));
+        rook.init_legal_moves(&board);
+
+        assert_eq!(rook.legal_moves.len(), 14);
     }
 
     #[test]
-    fn test_knight_moves() {
-        // Test knight moves from the center of the board
-        let knight = Piece::new(PieceType::Knight, (4, 4), 8);
-        let moves = knight.get_knight_moves();
-        assert_eq!(moves.len(), 8);
-
-        // Test knight moves from the corner of the board
-        let knight = Piece::new(PieceType::Knight, (0, 0), 8);
-        let moves = knight.get_knight_moves();
-        assert_eq!(moves.len(), 2);
-    }
-
-    #[test]
-    fn test_bishop_moves() {
-        // Test bishop moves from the center of the board
-        let bishop = Piece::new(PieceType::Bishop, (4, 4), 8);
-        let board_pieces = vec![];
-        let moves = bishop.get_bishop_moves(&board_pieces);
-        assert_eq!(moves.len(), 13);
-
-        // Test bishop moves with pieces blocking the way
-        let bishop = Piece::new(PieceType::Bishop, (4, 4), 8);
-        let board_pieces = vec![
-            Piece::new(PieceType::Pawn, (2, 2), 8),
-            Piece::new(PieceType::Pawn, (6, 6), 8),
-            Piece::new(PieceType::Pawn, (2, 6), 8),
-            Piece::new(PieceType::Pawn, (6, 2), 8),
+    fn test_knight_legal_moves() {
+        let board = vec![
+            Piece::new(0, 8, PieceType::Knight, (0, 0)),
+            Piece::new(0, 8, PieceType::Knight, (0, 7)),
+            Piece::new(0, 8, PieceType::Knight, (7, 0)),
+            Piece::new(0, 8, PieceType::Knight, (7, 7)),
         ];
-        let moves = bishop.get_bishop_moves(&board_pieces);
-        assert_eq!(moves.len(), 8);
+
+        let mut knight = Piece::new(0, 8, PieceType::Knight, (3, 3));
+        knight.init_legal_moves(&board);
+
+        assert_eq!(knight.legal_moves.len(), 8);
     }
 
     #[test]
-    fn test_king_moves() {
-        // Test king moves from the center of the board
-        let king = Piece::new(PieceType::King, (4, 4), 8);
-        let moves = king.get_king_moves();
-        assert_eq!(moves.len(), 8);
+    fn test_bishop_legal_moves() {
+        let board = vec![
+            Piece::new(0, 8, PieceType::Bishop, (0, 0)),
+            Piece::new(0, 8, PieceType::Bishop, (0, 7)),
+            Piece::new(0, 8, PieceType::Bishop, (7, 0)),
+            Piece::new(0, 8, PieceType::Bishop, (7, 7)),
+        ];
 
-        // Test king moves from the corner of the board
-        let king = Piece::new(PieceType::King, (0, 0), 8);
-        let moves = king.get_king_moves();
-        assert_eq!(moves.len(), 3);
+        let mut bishop = Piece::new(0, 8, PieceType::Bishop, (3, 3));
+        bishop.init_legal_moves(&board);
+
+        assert_eq!(bishop.legal_moves.len(), 11);
+    }
+
+    #[test]
+    fn test_king_legal_moves() {
+        let board = vec![
+            Piece::new(0, 8, PieceType::King, (0, 0)),
+            Piece::new(0, 8, PieceType::King, (0, 7)),
+            Piece::new(0, 8, PieceType::King, (7, 0)),
+            Piece::new(0, 8, PieceType::King, (7, 7)),
+        ];
+
+        let mut king = Piece::new(0, 8, PieceType::King, (3, 3));
+        king.init_legal_moves(&board);
+
+        assert_eq!(king.legal_moves.len(), 8);
     }
 }
